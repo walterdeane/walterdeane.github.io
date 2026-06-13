@@ -1,0 +1,31 @@
+title: "Walter Deane"
+description: "Practical posts on AI, LLMs, and developer tooling."
+url: "https://walterdeane.github.io"
+baseurl: ""
+
+author:
+  name: Walter Deane
+  email: walter.deane@gmail.com
+
+theme: minima
+
+minima:
+  skin: dark
+  social_links:
+    - { platform: github, user_url: "https://github.com/walterdeane" }
+
+header_pages:
+  - about.md
+
+plugins:
+  - jekyll-feed
+  - jekyll-seo-tag
+
+permalink: /posts/:slug/
+
+markdown: kramdown
+highlighter: rouge
+
+kramdown:
+  input: GFM
+  syntax_highlighter: rouge
