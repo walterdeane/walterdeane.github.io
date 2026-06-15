@@ -9,7 +9,7 @@ source_code: "https://github.com/walterdeane/blog-drafts/tree/main/blogs/004_bui
 
 In this blog I want to demonstrate a geospatial system that I had planned to build for monitoring payment terminals used by merchants. While the original use case was focused on payments, I think the same concepts apply to a wide range of connected devices, including payment terminals, kiosks, sensors, and other IoT deployments.
 
-I was disappointed that I never had the opportunity to finish this project before leaving Tyro. Rather than let the idea disappear, I decided to document it here and provide a proof-of-concept repository so others can experiment with the approach and determine whether it could be useful in their own environments.
+I was disappointed that I never had the opportunity to finish this project before leaving my previous company. Rather than let the idea disappear, I decided to document it here and provide a proof-of-concept repository so others can experiment with the approach and determine whether it could be useful in their own environments.
 
 ## Potential Use Cases
 
@@ -263,7 +263,7 @@ Most visualisation would be provided through OpenLayers-based maps embedded with
 
 ## Current State
 
-Before leaving, I had already built several of the major components:
+Before leaving my last company, I had already built several of the major components:
 
 - GeoServer running in EKS
 - S3-backed tile caching
@@ -272,4 +272,65 @@ Before leaving, I had already built several of the major components:
 
 For the purposes of this blog and the accompanying proof-of-concept repository, I'll keep things much simpler.
 
-Rather than recreating the full AWS deployment, I'll run GeoServer and PostGIS locally using Docker and focus on demonstrating the core concepts. The S3-backed tile cache and production infrastructure can be ignored for now so we can concentrate on the geospatial workflows themselves.
+Rather than recreating the full AWS deployment, I'll run GeoServer and PostGIS locally using Docker and focus on demonstrating the core concepts. The S3-backed tile cache and production infrastructure can be ignored for now so we can concentrate on the geospatial workflows themselves. I will have a geospatial api that will handle the processing of the telemetry and managing the external calls and cache.
+
+The accompanying [proof-of-concept repository]({{ page.source_code }}) now has a working version of this: a small Spring Boot service backed by the PostGIS schema above, plus a seeded demo fleet so the whole flow can be explored end-to-end without any AWS dependencies.
+
+## Try the Demo
+
+![GeoMonitor home page, linking to the support pages and demo maps](/assets/images/geospatial-demo-home.png)
+
+### Location Resolution
+
+The core of the service is a single `POST /telemetry` endpoint that mirrors the caching strategy described earlier.
+
+If the device reports its own GPS/fused location, that's used directly - it's more precise than anything else available - and it's also used to refresh the cell tower and WiFi caches for the signals reported alongside it.
+
+Otherwise, the service works through the following, in order, until it finds a location:
+
+1. Use the device's last known location if one is already on record.
+2. Check the cell tower cache for the reported cell tower(s).
+3. Check the WiFi access point cache, starting with whichever access point the device is currently connected to.
+4. Only if none of the above are cached, fall back to a geolocation provider and cache the result against every cell tower and access point reported.
+
+The geolocation provider is pluggable. A `stub` provider returns a deterministic location derived from the cell tower ID, so the whole demo runs without any external dependencies, while a `google` provider calls the real Google Geolocation API if you supply an API key.
+
+![Location Telemetry Simulator page, showing a sample cell tower / WiFi / GPS payload submitted to /telemetry](/assets/images/geospatial-demo-telemetry.png)
+
+Originally I'd assumed the cache would need something like the Top-K lookup structure described earlier - matching against the *combination* of cell towers a device could see, ranked by how often that combination occurred. In practice it turned out to be much simpler: each cell tower and WiFi access point already has a stable identifier (`mcc`/`mnc`/`lac`/`cell_id` for towers, `bssid` for access points), so a plain exact-match lookup against each one individually is enough. A device's scan list changes from one telemetry message to the next as towers and access points come in and out of range, but any single previously-seen identifier in that list is enough for a cache hit - no combination matching or ranking required.
+
+### Demo Fleet and Support Pages
+
+The PostGIS database is seeded with 1,000 simulated payment terminals (`terminal-1001` through `terminal-2000`) scattered around Australia's major cities, each with telemetry (battery, network provider, active SIM, merchant category), a connectivity history, and 30 days of sales data.
+
+A small set of server-rendered pages sit on top of the API for browsing and exercising this fleet:
+
+- **Devices** - a table of every terminal with its current connectivity status, network provider, location, and last-seen time, linking to a detail page where telemetry can be viewed and edited directly.
+- **Connectivity Simulator** - send `online`, `expected_offline`, or `unexpected_offline` events for a device, the same way a real terminal's MQTT "last will and testament" message would, and watch its connectivity history update.
+- **Location Telemetry** - submit a sample cell tower / WiFi / GPS payload to `/telemetry` and see which resolution path (cache, GPS, or geolocation provider) was used and what location came back.
+
+![Devices support page, listing the demo fleet with connectivity status, network provider, location, and last-seen time](/assets/images/geospatial-demo-devices.png)
+
+### Demo Maps
+
+Three Leaflet maps render WMS layers served by GeoServer:
+
+- **Terminals by Connectivity Status** - every terminal, colored green, orange, or red by online, expected-offline, or unexpected-offline status, with a toggle per status.
+- **Terminals by SIM Provider & Cell Towers** - terminals colored by SIM provider (Telstra, Optus, Vodafone, other) alongside the cell tower network they're attached to, with optional coverage circles per carrier.
+- **Terminal Sales by Day** - a day-by-day heatmap of sales per terminal, using a date picker to step through the 30 days of seeded sales history.
+
+![Terminals by Connectivity Status map, showing demo terminals across Australia colored green, orange, or red](/assets/images/geospatial-demo-map-status.png)
+
+![Terminals by SIM Provider & Cell Towers map, showing terminals and cell towers colored by carrier with coverage circles](/assets/images/geospatial-demo-map-network.png)
+
+![Terminal Sales by Day map, showing a heatmap of sales per terminal for a selected day](/assets/images/geospatial-demo-map-sales.png)
+
+### Running It
+
+Everything runs with a single command from the repo root:
+
+```bash
+docker compose up -d
+```
+
+This brings up PostGIS, GeoServer, and the processing service together. The home page at `http://localhost:8081` links to all of the support pages and demo maps above, and the [repo README]({{ page.source_code }}) has the full setup details, including the telemetry API reference for anyone who wants to script against it directly.
