@@ -137,6 +137,8 @@ There was also a mechanism planned to bypass the cache entirely when required. T
 
 The proposed solution consisted of four primary components.
 
+> **PostGIS** is an extension for PostgreSQL that adds support for geographic objects, spatial queries, and geospatial indexing — things like storing coordinates, calculating distances, and querying which devices fall within a polygon. **GeoServer** is an open-source server that publishes spatial data as standardised map services (WMS, WFS), allowing map tiles and feature layers to be consumed by client applications such as Leaflet or OpenLayers.
+
 ```mermaid
 flowchart LR
 
@@ -261,6 +263,37 @@ The processed geospatial information could then be consumed by a variety of inte
 
 Most visualisation would be provided through OpenLayers-based maps embedded within existing operational and business applications.
 
+### Location Resolution Flow
+
+The decision logic inside the processing service follows a strict cache-first hierarchy. Only the leftmost path that produces a result is used — every path below it is skipped.
+
+```mermaid
+flowchart TD
+    A([Telemetry received]) --> B{GPS location\nreported?}
+
+    B -- Yes --> C[Use GPS location]
+    C --> D[Refresh cell tower\n& WiFi caches\nwith GPS fix]
+    D --> Z[(Store in\ndevice_locations)]
+
+    B -- No --> E{Last known\nlocation on record?}
+    E -- Yes --> F[Reuse last\nknown location]
+    F --> Z
+
+    E -- No --> G{Cell tower\ncache hit?}
+    G -- Yes --> H[Use cached\nlocation]
+    H --> Z
+
+    G -- No --> I{WiFi access\npoint cache hit?}
+    I -- Yes --> J[Use cached\nlocation]
+    J --> Z
+
+    I -- No --> K[Call geolocation\nprovider]
+    K --> L[Cache result against\nall reported towers\n& access points]
+    L --> Z
+```
+
+GPS is always preferred when available because it is the most precise source, and the processing service uses it as an opportunity to warm the caches for the cell towers and access points reported in the same message. For everything else, the service works down the hierarchy until it finds a hit, only calling an external provider when the cache has no match at all.
+
 ## Current State
 
 Before leaving my last company, I had already built several of the major components:
@@ -334,3 +367,13 @@ docker compose up -d
 ```
 
 This brings up PostGIS, GeoServer, and the processing service together. The home page at `http://localhost:8081` links to all of the support pages and demo maps above, and the [repo README]({{ page.source_code }}) has the full setup details, including the telemetry API reference for anyone who wants to script against it directly.
+
+### Caveats
+
+This is a proof-of-concept, not a production deployment. A few things worth knowing before running it:
+
+**Google Geolocation API coverage.** The `google` provider has been tested against real cell tower data and produces accurate results. WiFi-based resolution has seen less real-world testing due to limited access point input data, so cell tower resolution is the more reliable of the two paths when using a live API key. The `stub` provider is the default and requires no credentials.
+
+**Security.** The original production system had PostGIS and GeoServer fully secured. This demo deliberately leaves the default credentials in place to keep setup frictionless — it is intended to run locally and should not be exposed beyond localhost.
+
+**Prior geospatial knowledge is not required.** This post does not attempt to explain how geospatial systems work in general. The demo is intentionally self-contained: the support pages and maps are there to make the concepts tangible without requiring any prior familiarity with PostGIS, GeoServer, or spatial data.
