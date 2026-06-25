@@ -2,8 +2,8 @@
 layout: post
 title: "Benchmarking Local LLMs with Ollama and a Simple Bash Script"
 date: 2025-09-15
-categories: [ai, llm, benchmarking]
-tags: [ollama, bash, benchmarking, local-llm]
+categories: [ai, llm]
+tags: [benchmarking, ollama, bash, local-llm]
 source_code: "https://github.com/walterdeane/blog-drafts/tree/main/blogs/002_local_benchmarking_setup_for_llms"
 ---
 

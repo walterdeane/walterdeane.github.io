@@ -2,8 +2,8 @@
 layout: post
 title: "Generating Grafana Dashboards Using LLMs"
 date: 2025-10-01
-categories: [ai, llm, observability]
-tags: [grafana, prometheus, kubernetes, k3d, llm]
+categories: [ai, llm]
+tags: [observability, grafana, prometheus, kubernetes, k3d]
 source_code: "https://github.com/walterdeane/blog-drafts/tree/main/blogs/003_generating_grafana_dashboards_using_LLMs"
 ---
 

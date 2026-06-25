@@ -2,8 +2,8 @@
 layout: post
 title: "Running a Local LLM for Code Assistance and Docs"
 date: 2025-09-02
-categories: [ai, llm, tutorial]
-tags: [ollama, local-llm, vscode, continue]
+categories: [ai, llm]
+tags: [tutorial, ollama, local-llm, vscode, continue]
 source_code: "https://github.com/walterdeane/blog-drafts/tree/main/blogs/001_setting-up-a-local-llm"
 ---
 

@@ -1,7 +1,6 @@
 ---
-layout: page
-title: About
-permalink: /about/
+icon: fas fa-info-circle
+order: 4
 ---
 
 I'm Walter Deane — a developer writing about AI, LLMs, and the practical side of building with them.

@@ -2,9 +2,10 @@
 layout: post
 title: "Building a Geospatial Monitoring System for Payment Terminals"
 date: 2026-06-13
-categories: [iot, geospatial, aws]
-tags: [postgis, geoserver, aws-iot, fraud-detection, postgresql]
+categories: [iot, geospatial]
+tags: [aws, postgis, geoserver, aws-iot, fraud-detection, postgresql]
 source_code: "https://github.com/walterdeane/blog-drafts/tree/main/blogs/004_building_a_geospatial_monitoring_system_for_payment_terminals"
+mermaid: true
 ---
 
 In this blog I want to demonstrate a geospatial system that I had planned to build for monitoring payment terminals used by merchants. While the original use case was focused on payments, I think the same concepts apply to a wide range of connected devices, including payment terminals, kiosks, sensors, and other IoT deployments.

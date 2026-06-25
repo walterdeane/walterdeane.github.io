@@ -2,8 +2,8 @@
 layout: post
 title: "Setting Up a Local LLM for Code Assistance"
 date: 2025-09-02
-categories: [ai, llm, tutorial]
-tags: [ollama, local-llm, deepseek, docker, open-webui]
+categories: [ai, llm]
+tags: [tutorial, ollama, local-llm, deepseek, docker, open-webui]
 source_code: "https://github.com/walterdeane/blog-drafts/tree/main/blogs/001_setting-up-a-local-llm"
 ---
 
