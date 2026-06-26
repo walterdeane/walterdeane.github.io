@@ -67,34 +67,23 @@ Google's Geolocation API can combine information from:
 to estimate the most accurate location possible.
 
 ### The Cost Problem
-
 Google's pricing initially appeared reasonable. However, the numbers become much larger when scaled across an entire fleet.
-
-For example:
-
-- 130,000 terminals
-- One location lookup per hour
-- 24 hours per day
-- 30.5 days per month
-
-Results in approximately:
-
-**95,160,000 API calls per month**
-
-Using Google's published pricing at the time, Gemini estimated this would cost somewhere between **$34,000 and $64,000 per month**.
-
+For a large fleet of payment terminals receiving frequent location lookups around the clock, the result is hundreds of millions of API calls per month.
+Using Google's published pricing at the time, this could cost tens of thousands of dollars per month.
 That estimate is likely higher than reality because:
 
-- Not all terminals are powered on 24 hours a day.
-- Many merchants only operate during business hours.
-- Volume discounts would likely apply.
-- Location changes occur far less frequently than telemetry updates.
+Not all terminals are powered on 24 hours a day.
+Many merchants only operate during business hours.
+Volume discounts would likely apply.
+Location changes occur far less frequently than telemetry updates.
 
 Even so, it is a significant cost for a single metric, regardless of how valuable that metric may be.
 
-## Reducing Costs Through Caching
+### Reducing Costs Through Caching
 
-To make the solution economically viable, I designed a caching strategy that dramatically reduced the number of external geolocation requests.
+Under those conditions, monthly costs could potentially drop from tens of thousands of dollars to a few hundred dollars per month.
+Before rolling this out across the production fleet, my plan was to enable telemetry collection while feature-toggling the Google API calls. This would allow us to gather real-world metrics for a month and validate the assumptions before incurring any significant cost.
+Based on a rough Fermi estimation approach, I expected annual external API costs to remain in low four figures annually if the cache behaved as anticipated.
 
 ### Step 1: Cell Tower Dataset
 
@@ -204,6 +193,8 @@ flowchart LR
     BI --> CUSTOMERS
 ```
 
+![System architecture, showing payment terminals flowing through AWS IoT Core and SQS into a geospatial processing service, which writes to Aurora PostgreSQL with PostGIS, feeds GeoServer/OpenLayers maps, and powers fraud detection, incident detection, and business intelligence](/assets/images/geospatial-system-architecture.png)
+
 ### AWS IoT
 
 AWS IoT handled ingestion and routing of:
@@ -292,6 +283,8 @@ flowchart TD
     K --> L[Cache result against\nall reported towers\n& access points]
     L --> Z
 ```
+
+![Location resolution flowchart: GPS location is used and refreshes the cell tower and WiFi caches if reported; otherwise the service falls back to the last known location, then a cell tower cache hit, then a WiFi access point cache hit, and finally calls an external geolocation provider and caches the result](/assets/images/location-resolution-flow.png)
 
 GPS is always preferred when available because it is the most precise source, and the processing service uses it as an opportunity to warm the caches for the cell towers and access points reported in the same message. For everything else, the service works down the hierarchy until it finds a hit, only calling an external provider when the cache has no match at all.
 
