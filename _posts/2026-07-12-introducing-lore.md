@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Introducing Lore: A Local-First RAG System for Personal Knowledge"
-date: 2026-07-13
+date: 2026-07-12
 tags: [rag, kotlin, spring-boot, spring-ai, postgres, ollama]
 ---
 
