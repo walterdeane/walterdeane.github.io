@@ -5,7 +5,7 @@ date: 2026-07-12
 tags: [rag, kotlin, spring-boot, spring-ai, tika, pdf, epub, ingestion]
 ---
 
-*This is the second post in a series about [Lore](https://github.com/walterdeane/lore), a local-first RAG system for personal documents. The [first post]([LINK]) covers what Lore is and how it's put together.*
+*This is the second post in a series about [Lore](https://github.com/walterdeane/lore), a local-first RAG system for personal documents. The [first post](/posts/introducing-lore/) covers what Lore is and how it's put together.*
 
 My copy of *Thinking, Fast and Slow* killed the ingestion pipeline with a single tag. There's some irony there — it's probably the book that's made me better at almost everything, to the point that I used to buy copies just to give to friends and coworkers. Now it was the first book to take my code down.
 
