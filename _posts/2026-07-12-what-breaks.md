@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "Lore: What Breaks When You Ingest Real Books Instead of Test Fixtures"
+title: "What Breaks When You Ingest Real Books Instead of Test Fixtures"
 date: 2026-07-12
 tags: [rag, kotlin, spring-boot, spring-ai, tika, pdf, epub, ingestion]
 ---
@@ -10,6 +10,8 @@ tags: [rag, kotlin, spring-boot, spring-ai, tika, pdf, epub, ingestion]
 My copy of *Thinking, Fast and Slow* killed the ingestion pipeline with a single tag. There's some irony there — it's probably the book that's made me better at almost everything, to the point that I used to buy copies just to give to friends and coworkers. Now it was the first book to take my code down.
 
 Somewhere in one of the EPUB's 70 content files sat `<divlity>` — a malformed fragment, probably a scraping or conversion artifact, one broken tag in 1.16 million characters of otherwise fine XHTML. Tika's strict SAX parser hit it and threw, the exception propagated up, and the whole import failed. Nothing else about the book was wrong. One tag.
+
+I'll admit the failures caught me off guard. When I started writing Lore I thought the hard part would be learning Spring AI — but Spring AI turned out to be well put together and easy to use. I'd done my deep dives into chunking strategies and RAG techniques and figured the rest would be easy to knock over. The first few imports backed me up: search worked, a simple chat worked, I was a genius. Then I started importing more books to grow the corpus, and the failures piled up — malformed tags, invalid EPUBs, PDFs broken in ways I'd never seen.
 
 Every RAG tutorial I read while building Lore ingests a clean PDF or two and moves on to the interesting parts — embeddings, retrieval, prompts. This post is about what happens before any of that: pointing an ingestion pipeline at real files — EPUBs of varying provenance, archive.org scans, professionally typeset cookbooks — and watching it break in ways no fixture would have predicted. Four failures, in the order they found me. The first two happen to be EPUBs and the last two PDFs, but don't read too much into that — strict-vs-lenient parsing, bad structural assumptions, and print artifacts can bite in either format.
 
@@ -56,7 +58,7 @@ That's a line worth drawing deliberately: which failures do you engineer around,
 
 ## Failure 3: headings that aren't headings
 
-Before the last two failures, a word about PDFs, because both failures live there. PDFs are fundamentally a pain to work with, and it's not the format's fault so much as its purpose: a PDF isn't meant to be read by software, it's meant to be *printed*. The text isn't stored linearly — it's a series of drawing commands placing glyphs at positions, in fonts, at sizes. "Extracting the text" means reverse-engineering a document out of what is essentially a plotter instruction stream. I've generated and parsed PDFs at various points in my career and this project still had me doing more googling — and leaning on Claude more — than everything EPUB-related combined.
+Before the last two failures, a word about PDFs, because both failures live there. PDFs are fundamentally a pain to work with, and it's not the format's fault so much as its purpose: a PDF isn't meant to be read by software, it's meant to be *printed*. The text isn't stored linearly — it's a series of drawing commands placing glyphs at positions, in fonts, at sizes. "Extracting the text" means reverse-engineering a document out of what is essentially a plotter instruction stream — anyone who's tried to cut and paste from a PDF into a word processor has met this firsthand. And the spec is flexible enough to allow a dozen ways of doing the same thing, some of them broken, so extraction code has to be prepared for anything. I've generated and parsed PDFs at various points in my career and this project still had me doing more googling — and leaning on Claude more — than everything EPUB-related combined.
 
 Which brings us to headings. PDFs don't have them, structurally speaking. The common heuristic for recovering structure is font size: if a line's font is much bigger than the body text, call it a heading. Lore's structural chunking strategy leaned on this so chunks could align to the document's actual sections.
 
@@ -93,6 +95,8 @@ None of these were exotic edge cases hunted down for blog material. They were th
 
 The practical takeaway: budget ingestion hardening proportional to how varied your input corpus actually is, not how clean your fixtures are. Testing against fixtures tells you the code runs. Testing against the wild tells you where your assumptions live — and the wild is cheaper to consult early, when each discovery reshapes one function, than late, when it invalidates a corpus.
 
-Lore only handles EPUBs and PDFs today; more formats will come as I need them or someone asks. Given everything above, I suspect each new format will bring its own chapter to this failure log.
+Lore only handles EPUBs and PDFs today; more formats will come as I need them or someone asks. I'm also being deliberate about what I *won't* fix: no scanned PDFs, no OCR, no DRM'd books, no files that are simply broken. I'd rather handle the vast majority of real books well than chase every pathological file. Given everything above, I suspect each new format will bring its own chapter to this failure log.
 
-These four failures are also why Lore's test suite grew an unusual shape: integration tests that run the real pipeline against real fixture files — including some of the exact books above — with real Postgres and real Ollama behind them, no mocks. How that works, what it costs, and the bug that Testcontainers' documentation practically dared me to write is a story for another day. Up next: the chunking strategy shootout.
+These four failures are also why Lore's test suite grew an unusual shape: integration tests that run the real pipeline against real fixture files — including some of the exact books above — with real Postgres and real Ollama behind them, no mocks. How that works, what it costs, and the bug that Testcontainers' documentation practically dared me to write is the next post but one. First, though: the chunking shootout.
+
+*Next in the series: [The chunking strategy shootout]([LINK]).*
