@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "What Breaks When You Ingest Real Books Instead of Test Fixtures"
+title: "Lore: What Breaks When You Ingest Real Books Instead of Test Fixtures"
 date: 2026-07-12
 tags: [rag, kotlin, spring-boot, spring-ai, tika, pdf, epub, ingestion]
 ---
