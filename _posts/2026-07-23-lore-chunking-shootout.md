@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "The Chunking Strategy Shootout: TOKEN vs. STRUCTURAL vs. SEMANTIC"
-date: 2026-07-XX
+date: 2026-07-23
 tags: [rag, kotlin, spring-boot, spring-ai, chunking, embeddings, postgres]
 ---
 
