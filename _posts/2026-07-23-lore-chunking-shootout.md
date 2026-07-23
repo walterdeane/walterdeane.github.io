@@ -9,31 +9,23 @@ tags: [rag, kotlin, spring-boot, spring-ai, chunking, embeddings, postgres]
 
 I first thought of writing Lore last year, when GenAI really took off and it looked like a great way to solve my cookbook problem. It got sidelined — work was busy, and we were getting evicted so the landlord could renovate and jack up the rent. My previous employer was also slow to adopt meaningful AI work beyond a bit of agentic coding, so I couldn't get any agentic projects approved there. Then I was made redundant along with a bunch of others, and shortly after that I bombed an interview badly enough to realize how little I actually knew about AI outside of AWS's built-in tools. That was the push. I came back to Lore as a way to learn the full stack properly, with a real project I'd actually use at home every day.
 
-Learning RAG was the driver, and when I started reading about it seriously, one thing stood out: the chunking strategy was going to have a much bigger impact than the querying techniques. Garbage in, garbage out was going to be the main issue given the constraints I'd set for myself. I wanted the whole system to be as green and as cheap as possible — everything runs locally through Ollama. Lore does let you use Claude as the chat model, but even then your embeddings are all done locally; Claude is only there as an option for someone who wants better answers at query time, while ingestion can stay slow and local.
+Learning RAG was the driver, and when I started reading about it seriously, one thing stood out: the chunking strategy was going to have a much bigger impact than the querying techniques. Garbage in, garbage out was going to be the main issue given the constraints I'd set for myself — everything runs locally through Ollama, as green and as cheap as possible ([the first post]([LINK]) covers those choices, and the optional Claude escape hatch for chat).
 
-I also didn't want this to be purely cookbook-centric, even though cookbooks were the original driver. I have books on woodworking, boatbuilding, permaculture, blacksmithing. That introduced a complexity: cookbooks tend to share similar presentation formats — similar headers, similar layouts — but other books are completely different. Some are large chapters of continuous text, some have frequent headers and subheaders. And I have both EPUBs and PDFs. EPUB isn't terrible to work with — it's HTML internally. PDF was designed for printing and was horrible to process; it's purely positional, with no semantic or structural tagging. I decided early that I'd need multiple chunking strategies for the different domains and documents. In the current version the strategy is user-selectable per document; I might add a batch agentic feature later where an LLM picks the right one after examining the doc.
+I also didn't want this to be purely cookbook-centric, even though cookbooks were the original driver. I have books on woodworking, boatbuilding, permaculture, blacksmithing — and books vary a lot. Some are large chapters of continuous text, some have frequent headers and subheaders. Some are EPUBs, which aren't too bad to work with (it's HTML internally), and some are PDFs, which were designed for printing and are horrible to process — purely positional, no structural tagging. I decided early that I'd need multiple chunking strategies for the different domains and documents. In the current version the strategy is user-selectable per document; I might add a batch agentic feature later where an LLM picks the right one after examining the doc.
 
 A few more deliberate restrictions shaped what you'll see below. I limited chunk size so the context window wouldn't blow out — this runs locally and I have to work within Ollama's limits. The current version is a single request-and-response design, because my use case is finding a direct answer; it doesn't handle conversations yet (I might add that later, if only to learn the memory management). I wanted chunks to be roughly the same size so the vectors would be comparable in granularity — results from different documents should be roughly equivalent. And I wanted the whole thing searchable as a pure ranked search engine without the LLM, so each chunk gets indexed two ways: a full-text index for keyword search, and a dense embedding for semantic search. That's what supports the hybrid search and reranking later in the pipeline.
 
 A naming warning here, because it caught me out while writing this. In the schema, the full-text index lives in a column called `search_vector` — but it isn't a vector in the embedding sense at all. Postgres's `tsvector` type is a list of stemmed words and their positions ('cook', 'meat', 'intimid'), basically a keyword index that happens to have "vector" in its name for reasons that predate the ML meaning of the word by decades. The embedding column is the numeric kind of vector, the one that lives in a 768-dimensional space. Two columns with "vector" in the name, and they have nothing to do with each other. So through this post: when I say full-text or keyword search, I mean the stemmed-word index; when I say embedding or semantic search, I mean the numeric vectors. The next post digs into both kinds of search properly.
 
-So: three chunking strategies, user-selectable, and a design that leans on chunk quality. Which raises the obvious question — does the choice of strategy actually matter? Chunking gets treated as a one-line config choice in most RAG writeups ("we used 512-token chunks with 50-token overlap") and nobody shows their work. I wanted to know, with data, on my actual books.
+So: three chunking strategies, user-selectable, and a design that leans on chunk quality. Which raises the obvious question — does the choice of strategy actually matter? Chunking gets treated as a one-line config choice in most RAG writeups ("we used 512-token chunks with 50-token overlap"), and few show their work on real books. I wanted to know, with data, on mine.
 
 The example that convinced me it matters is a chapter transition in *Thinking, Fast and Slow*. The chapter "Norms, Surprises, and Causes" ends with a set of closing pull-quotes, and "A Machine for Jumping to Conclusions" opens with an anecdote about the comedian Danny Kaye. Same book, same transition, three strategies:
 
-```
-                      "Norms, Surprises, and Causes" ends │ "A Machine for Jumping..." begins
-                                                          │
-TOKEN      chunk 58    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SEMANTIC   chunk 78    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┿━━━━━━━━━━━━━━━━━━━
-STRUCTURAL chunk 63                                       ┝━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                                                          │
-                                                   chapter boundary
-```
+![Bar chart showing where TOKEN, SEMANTIC, and STRUCTURAL each drew chunk boundaries around the chapter transition in Thinking, Fast and Slow. TOKEN's chunk 58 and SEMANTIC's chunk 78 both span across the chapter boundary, fusing the end of "Norms, Surprises, and Causes" with the start of "A Machine for Jumping to Conclusions." STRUCTURAL's chunk 63 starts exactly at the boundary.](/assets/img/posts/lore-chunking-shootout/01-chapter-boundary.png)
 
 Each bar shows the span of text one strategy put into a single chunk; the vertical line is the chapter boundary. TOKEN fused the end of one chapter with the opening of the next — one chunk spanning two unrelated chapters. SEMANTIC did the same thing, which surprised me: both sides of the boundary talk about the same broad topic (how intuitive thinking behaves), so as far as the embeddings were concerned there was no seam there, and the literal `## A Machine for Jumping to Conclusions` heading marker ends up sitting mid-chunk. STRUCTURAL was the only one that started a fresh chunk exactly at the heading.
 
-This shows up in retrieval, not just in the chunk table. I asked the hybrid search endpoint *why we need causal stories to explain surprising events* — content that sits right at that transition. STRUCTURAL returned the relevant passage at rank 1. TOKEN and SEMANTIC both returned a tangential match about regression to the mean.
+This shows up in retrieval, not just in the chunk table. I asked the hybrid search endpoint — hybrid meaning keyword and semantic search combined, which the next post covers properly — *why we need causal stories to explain surprising events*, content that sits right at that transition. STRUCTURAL returned the relevant passage at rank 1. TOKEN and SEMANTIC both returned a tangential match about regression to the mean.
 
 The rest of this post runs all three strategies over two of my actual books — *The Meat Hook Meat Book* (a professionally typeset cookbook PDF) and *Thinking, Fast and Slow* (a long-form nonfiction EPUB) — and looks at what the numbers say. The short version: the interesting finding is not "STRUCTURAL wins."
 
@@ -64,13 +56,11 @@ STRUCTURAL parses the source to markdown, splits on heading markers, and has GEN
 
 Now the finding that surprised me most in the whole experiment. Here's STRUCTURAL's chunk sizes next to TOKEN's on the cookbook. A quick note on how to read this, since I'll use the same format throughout: sizes are in tokens (a token is roughly three-quarters of an English word, so 600 tokens is in the neighborhood of 450 words). "Typical" is the median — half the chunks are smaller than it, half bigger. The "middle 80%" range ignores the most extreme 10% at each end and tells you where the bulk of the chunks actually live: a narrow range means the chunks are all about the same size, a wide range means they vary a lot.
 
-```
-strategy      chunks   typical    middle 80%      biggest
-STRUCTURAL      223      637      596 – 649        1750
-TOKEN           259      639      623 – 676         705
-```
+![Table comparing STRUCTURAL and TOKEN chunk sizes on the cookbook: STRUCTURAL has 223 chunks with a typical size of 637 tokens (middle 80% range 596–649, biggest 1750); TOKEN has 259 chunks with a typical size of 639 tokens (middle 80% range 623–676, biggest 705). The two distributions are nearly identical.](/assets/img/posts/lore-chunking-shootout/02-structural-vs-token-cookbook.png)
 
-They're nearly identical — same typical size, same narrow band. Think about what STRUCTURAL should look like if it were really cutting at headings: sections of a book vary wildly in length, so you'd expect ragged sizes — some tiny chunks for short sections, some large ones, all over the place. Instead it looks exactly like the strategy that cuts every 600-odd tokens by arithmetic. That's not what a heading-aware strategy should look like, so I traced it. Of STRUCTURAL's 223 chunks, exactly 5 came from headings whose sections fit inside the size cap — Cover, Title, Copyright, Resources, Acknowledgments. The other 218, which is 98%, were produced by the token-splitter fallback, because every real content chapter (Beef, Pork, Cooking Meat, and so on) exceeded the cap. The PDF's outline is chapter-level only, and the chapters run 20–45K characters.
+They're nearly identical — same typical size, same narrow band. Think about what STRUCTURAL should look like if it were really cutting at headings: sections of a book vary wildly in length, so you'd expect ragged sizes — some tiny chunks for short sections, some large ones, all over the place. Instead it looks exactly like the strategy that cuts every 600-odd tokens by arithmetic. That's not what a heading-aware strategy should look like, so I traced it. Of STRUCTURAL's 223 chunks, exactly 5 came from headings whose sections fit inside the size cap (`maxChunkChars`, 4,000 characters) — Cover, Title, Copyright, Resources, Acknowledgments. The other 218, which is 98%, were produced by the token-splitter fallback, because every real content chapter (Beef, Pork, Cooking Meat, and so on) blew through it. The PDF's outline is chapter-level only, and the chapters run 20,000–45,000 characters.
+
+The obvious comeback is "so raise the cap." But the cap isn't arbitrary — it exists because of where chunks end up, which is the context budget covered later in this post. Five retrieved chunks have to fit in a local model's prompt alongside the question and the answer; a cap generous enough to hold a 30,000-character chapter would blow that budget on a single chunk. The cap can't chase the chapters. The chapters have to be split.
 
 My first thought was that this was a coarse cookbook and a book with more headings would behave differently. The second book was the test: *Thinking, Fast and Slow* has 47 sections to the cookbook's 20. The result was worse, not better — 3 natural single-chunk sections, 94% of sections needing the fallback, 99.3% of chunks coming from it. More headings didn't help, because Kahneman's chapters are long-form essays that individually still exceed the cap. For ordinary full-length books, I now think this is the default outcome rather than a quirk of one book.
 
@@ -93,23 +83,13 @@ The percentile being *per-document* is the part worth understanding. A fixed dis
 
 The numbers show SEMANTIC genuinely doing something different from the other two. Here "small chunks" means chunks under 200 tokens — roughly a solid paragraph or less:
 
-```
-                        cookbook                     Thinking, Fast and Slow
-strategy      chunks   typical   small chunks    chunks   typical   small chunks
-SEMANTIC        469      192        49%            556      551        22.5%
-STRUCTURAL      223      637        ~0%            427      618         2.3%
-TOKEN           259      639         0%            407      617         0.0%
-```
+![Table comparing chunk sizes across both books. Cookbook: SEMANTIC has 469 chunks, typical size 192 tokens, 49% small chunks; STRUCTURAL has 223 chunks, typical size 637, ~0% small; TOKEN has 259 chunks, typical size 639, 0% small. Thinking, Fast and Slow: SEMANTIC has 556 chunks, typical size 551, 22.5% small; STRUCTURAL has 427 chunks, typical size 618, 2.3% small; TOKEN has 407 chunks, typical size 617, 0.0% small. SEMANTIC's sizes clearly track the content on both books.](/assets/img/posts/lore-chunking-shootout/03-semantic-both-books.png)
 
 Look at the cookbook column: half of SEMANTIC's chunks are small, tight units, and its typical chunk is a third the size of the other strategies'. That's the shape you'd expect if it really is cutting where the content shifts — a recipe collection changes topic constantly, so it should produce lots of short, focused chunks. On the Kahneman book, where the prose flows for pages on one idea, its chunks grow accordingly. It's the only strategy whose sizes follow the content instead of the configuration. I'll note this cuts against one of my own design goals from the intro — roughly uniform chunks so results across documents are comparable. SEMANTIC trades that uniformity for topical tightness, and I'm still deciding how I feel about the trade.
 
 The percentile does need tuning, though, and getting it wrong does real damage. The outline for this post said to show the tuning rather than assert it, so: I re-ingested the cookbook with `breakpointPercentile=0.95` — a plausible-looking value, "only cut at the top 5% of shifts" — into a throwaway domain. Next to the default:
 
-```
-setting          chunks   typical size   small chunks (under 200 tokens)
-p = 0.95           282        497                20%
-p = 0.85           469        192                49%
-```
+![Table comparing SEMANTIC's breakpoint percentile settings on the cookbook: p=0.95 produces 282 chunks with a typical size of 497 tokens and 20% small chunks; p=0.85 produces 469 chunks with a typical size of 192 tokens and 49% small chunks. Raising the percentile cuts far less often, producing fewer, bigger chunks.](/assets/img/posts/lore-chunking-shootout/04-percentile-tuning.png)
 
 Read that as: raising the threshold from 0.85 to 0.95 means the splitter cuts far less often, so you get 40% fewer chunks, the typical chunk is two and a half times bigger, and most of those small, focused chunks disappear. Same book, same pipeline, one config value changed — p=0.95 systematically merges content that p=0.85 keeps apart. The concrete example: one p=0.95 chunk contains the tail of one recipe ("The Inevitable Pork Chop with Cheddar Grits"), the entirety of a second ("Rooftop Ribs"), and the headnote of a third ("Chinese Barbecue Pork"). Three recipes in one chunk means one embedding pulled toward the average of all three — so a search for any one of those recipes matches that chunk less well than it should. At p=0.85 the same span falls into five cleanly bounded chunks, each recipe starting fresh.
 
@@ -118,7 +98,7 @@ One wrinkle worth being honest about. My original tuning notes describe p=0.95 p
 **SEMANTIC in short**
 - Good: the tightest topical cohesion — chunks start and end where the content actually shifts, so each embedding represents one thing.
 - Good: adapts to the document — short focused chunks for choppy books, longer ones for flowing prose.
-- Bad: the slowest and most expensive at ingest — it embeds every sliding window just to find the boundaries, before the chunks themselves get embedded for the index.
+- Bad: by far the slowest at ingest — re-ingesting the cookbook just now (same file, same machine, single run) took 213s wall-clock for SEMANTIC against 32s for TOKEN and 45s for STRUCTURAL. Nearly all of that time (212 of 213s) is the sliding-window pass finding breakpoints, before the chunks themselves ever get embedded for the index — SEMANTIC pays for two embedding passes where the other two pay for one.
 - Bad: the percentile is a genuinely dangerous knob, and a bad setting now fails quietly across the whole distribution.
 - Bad: ignores hard section boundaries, and its variable sizes cut against cross-document comparability.
 
@@ -126,21 +106,9 @@ One wrinkle worth being honest about. My original tuning notes describe p=0.95 p
 
 Chunk counts and sizes for both books, in the same format as before (tokens are counted with the same tokenizer the TOKEN splitter itself uses, so the comparison is apples to apples):
 
-```
-The Meat Hook Meat Book (PDF, COOKBOOK variant for STRUCTURAL)
-strategy      chunks   typical    middle 80%      biggest
-SEMANTIC        469      192       94 – 591        1744
-STRUCTURAL      223      637      596 – 649        1750
-TOKEN           259      639      623 – 676         705
+![Two tables comparing chunk sizes on both books. The Meat Hook Meat Book (PDF, COOKBOOK variant): SEMANTIC 469 chunks, typical 192 tokens, middle 80% range 94–591, biggest 1744; STRUCTURAL 223 chunks, typical 637, range 596–649, biggest 1750; TOKEN 259 chunks, typical 639, range 623–676, biggest 705. Thinking, Fast and Slow (EPUB, GENERIC variant): SEMANTIC 556 chunks, typical 551, range 103–598, biggest 854; STRUCTURAL 427 chunks, typical 618, range 528–640, biggest 795; TOKEN 407 chunks, typical 617, range 595–635, biggest 659. STRUCTURAL and TOKEN track each other closely on both books; SEMANTIC is the outlier with more, smaller, content-adaptive chunks.](/assets/img/posts/lore-chunking-shootout/05-head-to-head.png)
 
-Thinking, Fast and Slow (EPUB, GENERIC variant)
-strategy      chunks   typical    middle 80%      biggest
-SEMANTIC        556      551      103 – 598         854
-STRUCTURAL      427      618      528 – 640         795
-TOKEN           407      617      595 – 635         659
-```
-
-The story the sizes tell: STRUCTURAL and TOKEN are nearly interchangeable on both books, while SEMANTIC lives in a different world — far more chunks, much smaller typical size, and a middle-80% range five to six times wider, because its sizes track the content.
+The story the sizes tell: STRUCTURAL and TOKEN are nearly interchangeable on both books, while SEMANTIC lives in a different world — far more chunks, much smaller typical size, and a middle-80% range five to six times wider, because its sizes track the content. (If STRUCTURAL's biggest chunk of 1750 tokens looks odd next to "98% capped fallback pieces" — that outlier is one of the five natural sections, not a fallback chunk.)
 
 The retrieval spot-check: three real queries per book against each strategy's chunks, through the production hybrid endpoint. "Hit, rank 1" means the passage that actually answers the question came back as the top result. Cookbook first:
 
@@ -158,7 +126,7 @@ And *Thinking, Fast and Slow*:
 | why we need causal stories for surprises | miss — tangential | **hit, rank 1** | miss — tangential |
 | anchoring effect | hit, rank 1 | hit, rank 1 | hit, rank 1 |
 
-Reading this honestly: four of the six queries are clean three-way sweeps. That's a useful sanity check — retrieval works regardless of strategy for easy questions — but it doesn't discriminate between them. The two hard queries are both boundary-spanning questions, and that's where the strategies diverge: nobody cleanly wins gas-vs-charcoal (the failure modes just differ), and STRUCTURAL alone wins the causal-stories query, which is the retrieval consequence of the chapter boundary in the opening exhibit.
+Reading this honestly: four of the six queries are clean three-way sweeps. That's a useful sanity check — retrieval works regardless of strategy for easy questions — but it doesn't discriminate between them. The two hard queries share a property: their answers aren't localized in one tight passage. The causal-stories answer sits at a chapter boundary; the gas-vs-charcoal answer is spread across a whole section. That's where the strategies diverge: nobody cleanly wins gas-vs-charcoal (the failure modes just differ), and STRUCTURAL alone wins the causal-stories query, which is the retrieval consequence of the chapter boundary in the opening exhibit. And six queries is a spot-check, not an evaluation — the proper version would be a golden set of a few dozen queries with known answers, scored on whether the right chunk appears in the top k. That harness is on the future-work list; these six were chosen to probe specific failure modes, and they did.
 
 For balance, the exhibit I expected to lead this post with went the other way. On the cookbook's high-heat-versus-low-heat cooking guidance — a two-part instruction pivoting on the word "Conversely" — TOKEN cut exactly at the pivot, so one chunk ends mid-argument on the high-heat half. But TOKEN's 200-character overlap meant the following chunk carried both halves anyway, and STRUCTURAL's save turned out to be luck: its winning chunk was a fallback piece whose boundary happened to land a few hundred characters later. SEMANTIC was the only one that kept the whole unit together deliberately — its chunk spans the entire how-to-think-about-cooking-meat run and ends where the topic genuinely shifts. Three strategies survived the same passage for three different reasons, and only one of those reasons was on purpose.
 
@@ -178,17 +146,11 @@ The general lesson is about defaults whose consequences live somewhere else. Chu
 
 Gathering the boundary exhibits surfaced two real parser bugs — two-column PDF layouts getting zippered together line by line, and then my first fix for that bisecting full-width prose that had been correct before — and the context-budget discovery forced the chunk-size change. All three fixes landed before the final data pass, so every number in this post is post-fix. Which means the first dataset I collected was quietly measuring parser artifacts as if they were chunking behavior. If I'd drafted this post from that first pass, I would have confidently blamed chunking for bugs that lived in the parser.
 
-## When to reach for which
+One more thing worth pinning down: every number above was captured at the code state tagged [`chunking-shootout-data`](https://github.com/walterdeane/lore/tree/chunking-shootout-data) in the repo. I've since made a further fix to STRUCTURAL's EPUB path — recognizing bold-only paragraphs as headings, not just real `<h#>` tags — which changes the fallback share reported above for EPUB-sourced books specifically (it doesn't touch the cookbook, which is a PDF). Whether that dents the 98–99% figure enough to change the "STRUCTURAL is TOKEN with a label" framing is a good question for a follow-up; I'm not going back to rewrite this post's numbers every time the parser improves.
 
-What the data actually supports:
+## Which one, then
 
-**TOKEN** is a reasonable default. Overlap papers over some of its bad cuts, and for easy queries it retrieves as well as anything. But simple didn't mean robust here — it was the only strategy to fail an ingest — and its blindness to structure is exactly what boundary-spanning queries punish.
-
-**STRUCTURAL** is the right choice more often than its own statistics suggest. Expect it to behave like TOKEN for the bulk of any full-length book, because real chapters exceed any sensible size cap. But its never-spans-sections guarantee is cheap insurance that pays out precisely on the queries the other two lose. Check your document's heading granularity before expecting more from it than that.
-
-**SEMANTIC** is the only strategy that adapts chunk sizes to the content, and on the cookbook it shows. It's also the only one with a genuinely dangerous tuning knob, and its failure mode is now quiet — watch the distribution, not the max. And it shares TOKEN's disregard for hard section boundaries: semantic continuity across a chapter break is real continuity as far as the embedding is concerned, even when the author disagrees.
-
-None of these is simply better. They fail in different places, and on this data the failures line up with what each strategy ignores: TOKEN ignores structure, SEMANTIC ignores the author, STRUCTURAL ignores content size.
+The "in short" blocks above cover the properties; the practical guidance is shorter. None of these is simply better — they fail in different places, and on this data the failures line up with what each strategy ignores: TOKEN ignores structure, SEMANTIC ignores the author, STRUCTURAL ignores content size. My own defaults after this experiment: STRUCTURAL where the document has real structure to respect (its guarantee is cheap insurance that pays out exactly on the queries the others lose — but check the heading granularity before expecting more), SEMANTIC where topical tightness matters and I'm willing to watch the distribution after tuning, TOKEN when I just need something format-agnostic that works. And its fixed-size blindness to boundaries is a real cost, not a rounding error: it's what the hard queries punished.
 
 ## Strategies I didn't implement
 
@@ -202,7 +164,7 @@ Any of these might turn into a follow-up post or a project of its own, with the 
 
 ## Closing: per-document tuning, not a solved problem
 
-Lore resolves a chunking strategy per document (`chunkingStrategyResolver`), with STRUCTURAL variants per document shape and SEMANTIC defaults tuned against one cookbook. That's hand-tuning, and I'm calling it that. The open question is whether resolution should get smarter — more variants, per-corpus threshold sweeps, or the agentic selection from the last section — or whether hand-tuned defaults plus honest measurement is the right stopping point for a personal tool.
+Lore resolves a chunking strategy per document (`chunkingStrategyResolver`), with STRUCTURAL variants per document shape and SEMANTIC defaults tuned against several cookbooks. That's hand-tuning, and I'm calling it that. The open question is whether resolution should get smarter — more variants, per-corpus threshold sweeps, or the agentic selection from the last section — or whether hand-tuned defaults plus honest measurement is the right stopping point for a personal tool.
 
 One more thing from the spot-check that I'm saving for next time. I also ran those six queries through the lexical-only endpoint, and one conversational query returned zero results across all three strategies — while hybrid search degraded gracefully on the exact same question. Why keyword search fails completely where hybrid merely wobbles, and how Lore fuses the two legs so each covers the other's blind spots, is the next post.
 
