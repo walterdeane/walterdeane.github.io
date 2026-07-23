@@ -99,4 +99,4 @@ Lore only handles EPUBs and PDFs today; more formats will come as I need them or
 
 These four failures are also why Lore's test suite grew an unusual shape: integration tests that run the real pipeline against real fixture files — including some of the exact books above — with real Postgres and real Ollama behind them, no mocks. How that works, what it costs, and the bug that Testcontainers' documentation practically dared me to write is the next post but one. First, though: the chunking shootout.
 
-*Next in the series: [The chunking strategy shootout]([LINK]).*
+*Next in the series: [The chunking strategy shootout](/posts/lore-chunking-shootout/).*

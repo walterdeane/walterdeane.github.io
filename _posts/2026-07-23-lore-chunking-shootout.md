@@ -5,7 +5,7 @@ date: 2026-07-XX
 tags: [rag, kotlin, spring-boot, spring-ai, chunking, embeddings, postgres]
 ---
 
-*This is the third post in a series about [Lore](https://github.com/walterdeane/lore), a local-first RAG system for personal documents. Earlier posts: [Introducing Lore]([LINK]) and [What Breaks When You Ingest Real Books]([LINK]).*
+*This is the third post in a series about [Lore](https://github.com/walterdeane/lore), a local-first RAG system for personal documents. Earlier posts: [Introducing Lore](/posts/introducing-lore/) and [What Breaks When You Ingest Real Books](/posts/what-breaks/).*
 
 I first thought of writing Lore last year, when GenAI really took off and it looked like a great way to solve my cookbook problem. It got sidelined — work was busy, and we were getting evicted so the landlord could renovate and jack up the rent. My previous employer was also slow to adopt meaningful AI work beyond a bit of agentic coding, so I couldn't get any agentic projects approved there. Then I was made redundant along with a bunch of others, and shortly after that I bombed an interview badly enough to realize how little I actually knew about AI outside of AWS's built-in tools. That was the push. I came back to Lore as a way to learn the full stack properly, with a real project I'd actually use at home every day.
 
@@ -47,11 +47,11 @@ The three strategies make different assumptions about where good boundaries come
 
 `TokenTextSplitter`, fixed-size chunks, configurable overlap (`token-overlap-chars: 200` by default). It's the cheapest and simplest of the three, and before this experiment I would have described it the way the outline for this post did: "no parsing dependency, nothing to go wrong."
 
-That turned out to be backwards. When I ingested *Thinking, Fast and Slow* for this comparison, TOKEN was the only strategy that failed outright — zero chunks, status FAILED. If you read [the last post]([LINK]) you already know the culprit: the same `<divlity>` tag that opened that post. TOKEN fed the file to Tika, Tika's strict SAX parser threw, and there was no fallback behind it. STRUCTURAL and SEMANTIC ingested the identical file without a hiccup, because they use their own lenient Jsoup-based parsers and only touch Tika as a last resort. The "simple" strategy actually had the hardest parsing dependency of the three. (It has a fallback now — TOKEN degrades to the markdown parsers when Tika throws.)
+That turned out to be backwards. When I ingested *Thinking, Fast and Slow* for this comparison, TOKEN was the only strategy that failed outright — zero chunks, status FAILED. If you read [the last post](/posts/what-breaks/) you already know the culprit: the same `<divlity>` tag that opened that post. TOKEN fed the file to Tika, Tika's strict SAX parser threw, and there was no fallback behind it. STRUCTURAL and SEMANTIC ingested the identical file without a hiccup, because they use their own lenient Jsoup-based parsers and only touch Tika as a last resort. The "simple" strategy actually had the hardest parsing dependency of the three. (It has a fallback now — TOKEN degrades to the markdown parsers when Tika throws.)
 
 ## STRUCTURAL — heading-aware, mostly in name
 
-STRUCTURAL parses the source to markdown, splits on heading markers, and has GENERIC/COOKBOOK/ACADEMIC variants for different document shapes. For PDFs it prefers the document's embedded outline over font-size guessing — [the last post]([LINK]) has that story. When a heading section exceeds a size cap, a token-splitter fallback splits it further.
+STRUCTURAL parses the source to markdown, splits on heading markers, and has GENERIC/COOKBOOK/ACADEMIC variants for different document shapes. For PDFs it prefers the document's embedded outline over font-size guessing — [the last post](/posts/what-breaks/) has that story. When a heading section exceeds a size cap, a token-splitter fallback splits it further.
 
 Now the finding that surprised me most in the whole experiment. Here's STRUCTURAL's chunk-size distribution next to TOKEN's on the cookbook:
 
@@ -161,7 +161,7 @@ I opened the raw EPUB XHTML to find out why, and found this:
 
 A `<p>`, not an `<h#>`. The subhead's visual weight comes entirely from a CSS class — `.bold1 { font-weight: bold }`, defined in the chapter's stylesheet — that this EPUB's conversion pipeline applied instead of a semantic heading tag. `EpubMarkdownParser` only ever looked at tag names (`h1`–`h6` become `#`–`######`; everything else is body text), so a bold paragraph was invisible to it no matter how heading-like it looked rendered. Every "Speaking of..." box in the book, plus the "Two Systems" part-title that opens the chapter, had been quietly flattened into surrounding body text.
 
-The fix: `EpubMarkdownParser` now reads each chapter's linked stylesheet, resolves which CSS classes render `font-weight: bold`, and promotes a `<p>` to a `##` heading when its entire visible text is wrapped by a bold element (tag or resolved class) and it's shaped like a title — short, no sentence-ending punctuation. Same idea as the PDF font-size fallback from [the last post]([LINK]): when a format doesn't state its structure explicitly, infer it carefully, and only as a fallback.
+The fix: `EpubMarkdownParser` now reads each chapter's linked stylesheet, resolves which CSS classes render `font-weight: bold`, and promotes a `<p>` to a `##` heading when its entire visible text is wrapped by a bold element (tag or resolved class) and it's shaped like a title — short, no sentence-ending punctuation. Same idea as the PDF font-size fallback from [the last post](/posts/what-breaks/): when a format doesn't state its structure explicitly, infer it carefully, and only as a fallback.
 
 Rerunning STRUCTURAL on the same book with the fix in place, through the same splitter that produced the numbers above (character counts this time, not the `cl100k_base` token pass — I didn't have that harness wired up for this follow-up):
 

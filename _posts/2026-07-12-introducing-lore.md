@@ -61,8 +61,8 @@ Embeddings always stay local, and the reason is more than "chat quality varies m
 
 The next four posts dig into the details:
 
-1. **What breaks when you ingest real books** — the failure log from feeding actual EPUBs and PDFs into the pipeline: files that aren't what they claim to be, print-production noise that poisons chunks, and what each failure taught the ingestion code.
-2. **The chunking strategy shootout** — fixed-size token chunking vs. heading-aware structural chunking vs. embedding-similarity semantic chunking, compared on the same real documents.
+1. **[What breaks when you ingest real books](/posts/what-breaks/)** — the failure log from feeding actual EPUBs and PDFs into the pipeline: files that aren't what they claim to be, print-production noise that poisons chunks, and what each failure taught the ingestion code.
+2. **[The chunking strategy shootout](/posts/lore-chunking-shootout/)** — fixed-size token chunking vs. heading-aware structural chunking vs. embedding-similarity semantic chunking, compared on the same real documents.
 3. **The hybrid search architecture** — the lexical leg and the vector leg, why each catches what the other misses, Reciprocal Rank Fusion, and optional LLM reranking — all in one Postgres instance, no Elasticsearch.
 4. **Testing a RAG pipeline without mocking the LLM** — integration testing against real Postgres and real Ollama with Testcontainers, and the bugs that mocks would have hidden.
 
