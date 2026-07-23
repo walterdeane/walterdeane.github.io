@@ -177,9 +177,27 @@ max                                         3491          3926
 chunks from the oversized-chunk fallback  424 (99.3%)   370 (73%)
 ```
 
-The fallback dependency I flagged above — STRUCTURAL degrading to TOKEN's chunking 99% of the time — drops to 73%. Still the majority, because most of the space between subheads still exceeds the 4000-character cap on its own, but meaningfully less arithmetic splitting than before. And "Speaking of System 1 and System 2" now opens its own chunk instead of sitting buried mid-paragraph inside someone else's.
+The fallback dependency I flagged above — STRUCTURAL degrading to TOKEN's chunking 99% of the time — drops to 73%. Still the majority, but before I called this fixed I wanted to know what was actually driving that drop, not just trust the percentage.
 
-Two honest caveats. First, this only helps because this EPUB's converter happened to encode its subheads consistently as bold-only paragraphs — a book that bolds things for emphasis *inside* a sentence, or uses italics or small caps for its subheads instead, won't be caught by this at all, and a converter careless enough to drop heading tags might have dropped other structure too. Second, I haven't re-run the retrieval spot-check against these new chunk boundaries — that's the next thing to check before this fix ships, not something to assume from chunk boundaries alone. I picked *Thinking, Fast and Slow* assuming its visible subheads would matter to STRUCTURAL. They didn't, until I checked what the ebook actually encoded instead of what the page renders.
+It's not one box. "Speaking of System 1 and System 2" turned out to be one instance of a running feature: every chapter in this book ends with one of these, and the fix catches all 36 of them — "Speaking of Priming," "Speaking of Anchors," "Speaking of Losses," "Speaking of Regression to Mediocrity," all the way to "Speaking of Thinking About Life" in the closing chapter. Every one of them was invisible to STRUCTURAL before this fix; every one now gets its own chunk.
+
+And the fallback percentage actually understates the effect, because it's a ratio over a growing denominator — more total chunks dilutes it even before you ask whether anything got better. The number I trust more: chunks that never touch the oversized-chunk fallback at all — genuinely heading-bounded, no arithmetic splitting — went from **3 to 140**. Three natural chunks in the entire book, to 140.
+
+Is a natural chunk actually better, or just different? I pulled the text. The new `## Speaking of System 1 and System 2` chunk, in full:
+
+```
+## Speaking of System 1 and System 2
+
+"He had an impression, but some of his impressions are illusions."
+"This was a pure System 1 response. She reacted to the threat before she recognized it."
+"This is your System 1 talking. Slow down and let your System 2 take control."
+```
+
+Three sentences, one purpose, nothing else — a clean retrieval unit. Compare that to the section it used to live inside, `## Two Systems` (8,700 characters), which still needs the fallback and still comes out as 7 arbitrary slices of about 3,000 characters each. One slice ends mid-sentence on "...it has also learned skills such as reading and understanding nuances of social situations," and the next opens by repeating that same fragment before continuing — the 200-character overlap doing its job of softening a cut that has no relationship to the content on either side of it. That's not a flaw specific to this slice; it's `TokenTextSplitter` doing exactly what it does everywhere else in this post. The difference is that a natural chunk doesn't need it.
+
+The honest ceiling: 73% is still the majority, and it isn't going lower without more author-marked structure to exploit. The prose between headings can be long even after this fix — the section titled `## Mental Effort`, between "Attention and Effort" and its own "Speaking of..." box, runs 17,746 characters on its own, an order of magnitude past the 4,000-character cap. There's no further subhead in there for the parser to find, bolded or otherwise; Kahneman just writes a long section sometimes. The fix recovers exactly the structure the author actually marked — chapter, named subsection, recap box — and stops there. It can't invent boundaries inside an unbroken argument that has none.
+
+Three more honest caveats. First, this only helps because this EPUB's converter happened to encode its subheads consistently as bold-only paragraphs — a book that bolds things for emphasis *inside* a sentence, or uses italics or small caps for its subheads instead, won't be caught by this at all, and a converter careless enough to drop heading tags might have dropped other structure too. Second, I checked the full heading list for false positives — places where the detector might have split a continuous paragraph run that just happened to contain a short bold phrase — and found none; every promotion was a real "Speaking of..." box. Third, I haven't re-run the retrieval spot-check against these new chunk boundaries — that's the next thing to check before this fix ships, not something to assume from chunk boundaries alone. I picked *Thinking, Fast and Slow* assuming its visible subheads would matter to STRUCTURAL. They didn't, until I checked what the ebook actually encoded instead of what the page renders — and it took a second pass, past the summary percentage, to find out how much of the book that blind spot actually covered.
 
 ## When to reach for which
 
