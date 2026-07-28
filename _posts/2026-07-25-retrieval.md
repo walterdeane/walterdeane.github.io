@@ -13,7 +13,7 @@ I was using Java originally but by the end of writing this post I had swapped to
 Same methodology as the chunking post: instrument first, capture data against the current behavior, make changes, capture again. Everything below comes from those captures. And the biggest finding wasn't anything I went looking for — it was that the most expensive stage in my whole pipeline, the reranker, was making retrieval worse. Worse in three separate ways: it was returning fewer chunks than it was asked for on most queries, without reporting it; it was costing around ten seconds a call to do so, against a search that otherwise finishes in about fifty milliseconds; and when I finally scored it against a golden query set, retrieval with the reranker found the right chunk half as often as retrieval without it. The full data, and the two very different causes behind that last number, are towards the end.
 
 ## What hybrid search is
-
+![hybrid-pipeline.png](../assets/images/hybrid-pipeline.png)
 When you search in Lore, two completely different search engines run against the same chunks. The lexical leg is Postgres full-text search: stemmed keyword matching against an index of the actual words. The vector leg is [pgvector](https://github.com/pgvector/pgvector): your query gets embedded into the same 768-dimensional space as the chunks, and "relevant" means "nearby." Each leg returns a ranked list, the two lists get merged into one (that merge is the RRF my friend asked about), and the merged list is what you see — or, in the chat flow, what gets handed to the model as context. The whole post is about those three parts: each leg, the merge, and what happens after.
 
 ## The two things Postgres calls a vector
@@ -79,6 +79,8 @@ Reciprocal Rank Fusion is a very simple idea, it comes from a short 2009 paper b
 Here's the whole mechanism. Imagine two judges each hand you their top-ten list, and you want one combined list. Give every item points based on where it appeared on each list: an item at rank r earns 1/(k + r) points from that judge, with k = 60. So rank 1 is worth 1/61, about 0.0164 points; rank 2 is worth 1/62; rank 10 is worth 1/70; a gently flattening curve where higher ranks are worth more but never overwhelmingly more. An item's final score is its points from judge one plus its points from judge two — and being on *both* lists is the only way to score twice. That's the entire algorithm.
 
 The k = 60 looks arbitrary, and honestly it mostly is — it's the constant that worked best in the original paper's experiments, and everyone has copied it since, me included. What it's *for* is softening the cliff between adjacent ranks. With no constant at all, rank 1 would be worth double rank 2 (1/1 versus 1/2), so topping one list would dominate everything. With k = 60, rank 1 beats rank 2 by about 1.6% — the curve rewards being near the top without letting any single placement crush the rest.
+
+![rrf-worked-example.png](../assets/images/rrf-worked-example.png)
 
 A real worked example from the captures, the query `Rooftop Ribs`. Chunk `2b67a42e` came back at position 1 in the lexical list and position 2 in the vector list. Its fused score is 1/61 + 1/62 = 0.0164 + 0.0161 = 0.0325. Chunk `882f2099` was lexical position 3 and vector position 1: 1/63 + 1/61 = 0.0323. So `2b67a42e` edges it — two decent placements beat one great and one middling. Any chunk found by both legs at reasonable ranks outscores a chunk that topped one leg and missed the other, which is exactly the behavior you want: independent corroboration wins.
 
@@ -160,14 +162,7 @@ The retrieval check in the chunking post was six queries. I called it a spot-che
 
 Twenty queries across both books. For each one I picked the target chunk before running anything, by searching the raw content for a distinctive phrase — recipe titles for the cookbook, concept headings for Kahneman. The measure is [recall](https://en.wikipedia.org/wiki/Precision_and_recall)@5: is the target chunk in the top five results? I ran five configurations: lexical with the old AND-only behavior, lexical with the new fallback, vector only, hybrid, and hybrid with reranking.
 
-```
-configuration            recall@5
-lexical (old, AND-only)     40%
-lexical (new fallback)      45%
-vector only                 55%
-hybrid                      60%
-hybrid + rerank             30%
-```
+![recall-at-5.png](../assets/images/recall-at-5.png)
 
 Three things stand out.
 
