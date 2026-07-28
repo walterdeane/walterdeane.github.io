@@ -5,11 +5,11 @@ date: 2026-07-23
 tags: [rag, kotlin, spring-boot, spring-ai, chunking, embeddings, postgres]
 ---
 
-*This is the third post in a series about [Lore](https://github.com/walterdeane/lore), a local-first RAG system for personal documents. Earlier posts: [Introducing Lore]([LINK]) and [What Breaks When You Ingest Real Books]([LINK]).*
+*This is the third post in a series about [Lore](https://github.com/walterdeane/lore), a local-first RAG system for personal documents. Earlier posts: [Introducing Lore](/posts/introducing-lore/) and [What Breaks When You Ingest Real Books](/posts/what-breaks/).*
 
 I first thought of writing Lore last year, when GenAI really took off and it looked like a great way to solve my cookbook problem. It got sidelined — work was busy, and we were getting evicted so the landlord could renovate and jack up the rent. My previous employer was also slow to adopt meaningful AI work beyond a bit of agentic coding, so I couldn't get any agentic projects approved there. Then I was made redundant along with a bunch of others, and shortly after that I bombed an interview badly enough to realize how little I actually knew about AI outside of AWS's built-in tools. That was the push. I came back to Lore as a way to learn the full stack properly, with a real project I'd actually use at home every day.
 
-Learning RAG was the driver, and when I started reading about it seriously, one thing stood out: the chunking strategy was going to have a much bigger impact than the querying techniques. Garbage in, garbage out was going to be the main issue given the constraints I'd set for myself — everything runs locally through Ollama, as green and as cheap as possible ([the first post]([LINK]) covers those choices, and the optional Claude escape hatch for chat).
+Learning RAG was the driver, and when I started reading about it seriously, one thing stood out: the chunking strategy was going to have a much bigger impact than the querying techniques. Garbage in, garbage out was going to be the main issue given the constraints I'd set for myself — everything runs locally through Ollama, as green and as cheap as possible ([the first post](/posts/introducing-lore/) covers those choices, and the optional Claude escape hatch for chat).
 
 I also didn't want this to be purely cookbook-centric, even though cookbooks were the original driver. I have books on woodworking, boatbuilding, permaculture, blacksmithing — and books vary a lot. Some are large chapters of continuous text, some have frequent headers and subheaders. Some are EPUBs, which aren't too bad to work with (it's HTML internally), and some are PDFs, which were designed for printing and are horrible to process — purely positional, no structural tagging. I decided early that I'd need multiple chunking strategies for the different domains and documents. In the current version the strategy is user-selectable per document; I might add a batch agentic feature later where an LLM picks the right one after examining the doc.
 
@@ -41,7 +41,7 @@ There's also a reason I put this much effort into chunking specifically, and it'
 
 `TokenTextSplitter`, fixed-size chunks, configurable overlap (`token-overlap-chars: 200` by default). It's the cheapest and simplest of the three, and before this experiment I would have described it the way the outline for this post did: "no parsing dependency, nothing to go wrong."
 
-That turned out to be backwards. When I ingested *Thinking, Fast and Slow* for this comparison, TOKEN was the only strategy that failed outright — zero chunks, status FAILED. If you read [the last post]([LINK]) you already know the culprit: the same `<divlity>` tag that opened that post. TOKEN fed the file to Tika, Tika's strict SAX parser threw, and there was no fallback behind it. STRUCTURAL and SEMANTIC ingested the identical file without a hiccup, because they use their own lenient Jsoup-based parsers and only touch Tika as a last resort. The "simple" strategy actually had the hardest parsing dependency of the three. (It has a fallback now — TOKEN degrades to the markdown parsers when Tika throws.)
+That turned out to be backwards. When I ingested *Thinking, Fast and Slow* for this comparison, TOKEN was the only strategy that failed outright — zero chunks, status FAILED. If you read [the last post](/posts/what-breaks/) you already know the culprit: the same `<divlity>` tag that opened that post. TOKEN fed the file to Tika, Tika's strict SAX parser threw, and there was no fallback behind it. STRUCTURAL and SEMANTIC ingested the identical file without a hiccup, because they use their own lenient Jsoup-based parsers and only touch Tika as a last resort. The "simple" strategy actually had the hardest parsing dependency of the three. (It has a fallback now — TOKEN degrades to the markdown parsers when Tika throws.)
 
 **TOKEN in short**
 - Good: cheap and fast to compute — no extra model calls at ingest, just counting.
@@ -52,7 +52,7 @@ That turned out to be backwards. When I ingested *Thinking, Fast and Slow* for t
 
 ## STRUCTURAL — heading-aware, mostly in name
 
-STRUCTURAL parses the source to markdown, splits on heading markers, and has GENERIC/COOKBOOK/ACADEMIC variants for different document shapes. For PDFs it prefers the document's embedded outline over font-size guessing — [the last post]([LINK]) has that story. When a heading section exceeds a size cap, a token-splitter fallback splits it further.
+STRUCTURAL parses the source to markdown, splits on heading markers, and has GENERIC/COOKBOOK/ACADEMIC variants for different document shapes. For PDFs it prefers the document's embedded outline over font-size guessing — [the last post](/posts/what-breaks/) has that story. When a heading section exceeds a size cap, a token-splitter fallback splits it further.
 
 Now the finding that surprised me most in the whole experiment. Here's STRUCTURAL's chunk sizes next to TOKEN's on the cookbook. A quick note on how to read this, since I'll use the same format throughout: sizes are in tokens (a token is roughly three-quarters of an English word, so 600 tokens is in the neighborhood of 450 words). "Typical" is the median — half the chunks are smaller than it, half bigger. The "middle 80%" range ignores the most extreme 10% at each end and tells you where the bulk of the chunks actually live: a narrow range means the chunks are all about the same size, a wide range means they vary a lot.
 
@@ -168,4 +168,4 @@ Lore resolves a chunking strategy per document (`chunkingStrategyResolver`), wit
 
 One more thing from the spot-check that I'm saving for next time. I also ran those six queries through the lexical-only endpoint, and one conversational query returned zero results across all three strategies — while hybrid search degraded gracefully on the exact same question. Why keyword search fails completely where hybrid merely wobbles, and how Lore fuses the two legs so each covers the other's blind spots, is the next post.
 
-*Next in the series: [The hybrid search architecture]([LINK]).*
+*Next in the series: [The hybrid search architecture](/posts/retrieval/).*
